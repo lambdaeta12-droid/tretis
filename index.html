@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tetris Survival: Rango de Intensidad</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+    <style>
+        body { background: #111; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; overflow: hidden; }
+        
+        .menu { display: flex; gap: 10px; margin-bottom: 15px; z-index: 100; }
+        button { padding: 12px 20px; border: none; border-radius: 25px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        #btn-bluetooth { background: #0088ff; color: #fff; }
+        #btn-start { background: #00ff88; color: #fff; }
+
+        #game-container { position: relative; border: 4px solid #333; border-radius: 10px; }
+        canvas { display: block; background: #000; }
+
+        /* Marcadores Horizontales */
+        .stats { position: absolute; top: 10px; left: 10px; display: flex; gap: 10px; }
+        .stat-box { background: rgba(0,0,0,0.8); padding: 5px 12px; border-radius: 10px; border: 1px solid #444; font-size: 14px; }
+        #val-speed { color: #00ff88; font-weight: bold; }
+
+        #camera-preview { position: fixed; bottom: 15px; right: 15px; width: 100px; height: 75px; border: 2px solid #0ff; border-radius: 10px; overflow: hidden; opacity: 0.5; }
+        #input_video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+
+        #status-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 200; }
+    #countdown {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 100px;
+        font-weight: bold;
+        color: #ffeb3b;
+        text-shadow: 0 0 20px #000;
+        z-index: 1000;
+        display: none;
+        pointer-events: none;
+    }
+    
+    /* Animación de pulso para los puntos */
+    .pulse-point {
+        animation: point-glow 0.4s ease-out;
+    }
+
+    @keyframes point-glow {
+        0% { transform: scale(1); color: #fff; } /* Estado normal (blanco) */
+        50% { transform: scale(1.4); color: #00ff88; text-shadow: 0 0 15px #00ff88; } /* Brillo verde neón */
+        100% { transform: scale(1); color: #fff; } /* Volver a normal */
+    }
+
+    /* Asegurar que el span pueda animarse correctamente */
+    #score {
+        display: inline-block;
+        transition: 0.2s;
+    }
+    </style>
+</head>
+<body>
+
+    <div id="status-overlay">
+        <div id="status-text">Iniciando Cámara...</div>
+    </div>
+
+    <div class="menu">
+        <button id="btn-bluetooth" onclick="connectElliptical()">🔗 VINCULAR ELÍPTICA</button>
+        <button id="btn-start" onclick="startGame()">▶️ INICIAR JUEGO</button>
+    </div>
+
+    <div id="game-container">
+        <div id="countdown"></div>
+        <canvas id="tetris" width="240" height="400"></canvas>
+        <div class="stats">
+            <div class="stat-box">PTS<br><span id="score">0</span></div>
+            <div class="stat-box">MAX<br><span id="high-score">0</span></div>
+            <div class="stat-box">VEL<br><span id="val-speed">0.0</span></div>
+        </div>
+    </div>
+
+    <div id="camera-preview"> <video id="input_video"></video> </div>
+
+<script>
+/* ==========================================
+   1. LÓGICA TETRIS
+   ========================================== */
+const canvas = document.getElementById('tetris');
+const context = canvas.getContext('2d');
+context.scale(20, 20);
+
+const pieces = 'ILJOTSZ';
+const colors = [null, '#FF0D72', '#0DC2FF', '#0DFF72', '#F538FF', '#FF8E0D', '#FFE138', '#3877FF'];
+const arena = createMatrix(12, 20);
+const player = { pos: {x: 0, y: 0}, matrix: null, score: 0 };
+
+let dropCounter = 0;
+let dropInterval = 300; // Velocidad inicial (parado)
+let lastTime = 0;
+let gameRunning = false;
+let highScore = 0; // Guarda el récord de la sesión
+let animationId = null; // Para controlar el bucle de tiempo
+
+function createMatrix(w, h) {
+    const m = [];
+    while (h--) m.push(new Array(w).fill(0));
+    return m;
+}
+
+function createPiece(type) {
+    if (type === 'I') return [[0,1,0,0],[0,1,0,0],[0,1,0,0],[0,1,0,0]];
+    if (type === 'L') return [[0,2,0],[0,2,0],[0,2,2]];
+    if (type === 'J') return [[0,3,0],[0,3,0],[3,3,0]];
+    if (type === 'O') return [[4,4],[4,4]];
+    if (type === 'Z') return [[5,5,0],[0,5,5],[0,0,0]];
+    if (type === 'S') return [[0,6,6],[6,6,0],[0,0,0]];
+    if (type === 'T') return [[0,7,0],[7,7,7],[0,0,0]];
+}
+
+function playerReset() {
+    player.matrix = createPiece(pieces[pieces.length * Math.random() | 0]);
+    player.pos.y = 0;
+    player.pos.x = (arena[0].length / 2 | 0) - (player.matrix[0].length / 2 | 0);
+    if (collide(arena, player)) {
+        arena.forEach(row => row.fill(0));
+        player.score = 0;
+        document.getElementById('score').innerText = "0";
+    }
+}
+
+function collide(arena, player) {
+    const [m, o] = [player.matrix, player.pos];
+    for (let y = 0; y < m.length; ++y) {
+        for (let x = 0; x < m[y].length; ++x) {
+            if (m[y][x] !== 0 && (arena[y + o.y] && arena[y + o.y][x + o.x]) !== 0) return true;
+        }
+    }
+    return false;
+}
+
+function merge(arena, player) {
+    player.matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+            if (value !== 0) arena[y + player.pos.y][x + player.pos.x] = value;
+        });
+    });
+}
+
+function rotate(matrix, dir) {
+    for (let y = 0; y < matrix.length; ++y) {
+        for (let x = 0; x < y; ++x) [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
+    }
+    dir > 0 ? matrix.forEach(row => row.reverse()) : matrix.reverse();
+}
+
+function playerRotate(dir) {
+    rotate(player.matrix, dir);
+    if (collide(arena, player)) rotate(player.matrix, -dir);
+}
+
+function arenaSweep() {
+    let rowCount = 1;
+    outer: for (let y = arena.length - 1; y > 0; --y) {
+        for (let x = 0; x < arena[y].length; ++x) {
+            if (arena[y][x] === 0) continue outer;
+        }
+        const row = arena.splice(y, 1)[0].fill(0);
+        arena.unshift(row);
+        ++y;
+        //player.score += rowCount * 10;
+        player.score += 1;
+        const s = document.getElementById('score');
+        if (s) {
+            s.innerText = player.score;
+            s.classList.remove('pulse-point');
+            void s.offsetWidth; // Resetear animación
+            s.classList.add('pulse-point');
+        }
+    }
+    
+    // ACTUALIZAR INTERFAZ Y RÉCORD
+    document.getElementById('score').innerText = player.score;
+    if (player.score > highScore) {
+        highScore = player.score;
+        document.getElementById('high-score').innerText = highScore;
+    }
+}
+
+function draw() {
+    context.fillStyle = '#000';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    drawMatrix(arena, {x: 0, y: 0});
+    drawMatrix(player.matrix, player.pos);
+}
+
+function drawMatrix(matrix, offset) {
+    matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+            if (value !== 0) {
+                context.fillStyle = colors[value];
+                context.fillRect(x + offset.x, y + offset.y, 1, 1);
+            }
+        });
+    });
+}
+
+function update(time = 0) {
+    if (!gameRunning) return;
+    const deltaTime = time - lastTime;
+    lastTime = time;
+    dropCounter += deltaTime;
+    if (dropCounter > dropInterval) {
+        player.pos.y++;
+        if (collide(arena, player)) {
+            player.pos.y--;
+            merge(arena, player);
+            playerReset();
+            arenaSweep();
+        }
+        dropCounter = 0;
+    }
+    draw();
+    requestAnimationFrame(update);
+}
+
+function startGame() {
+    const cd = document.getElementById('countdown');
+    let count = 3;
+
+    // Reiniciar valores lógicos
+    gameRunning = false; 
+    if (animationId) cancelAnimationFrame(animationId);
+    
+    arena.forEach(row => row.fill(0));
+    player.score = 0;
+    if (document.getElementById('score')) document.getElementById('score').innerText = "0";
+    
+    playerReset(); // Preparamos la primera pieza
+    draw();        // Dibujamos el tablero vacío
+
+    // Iniciar Conteo
+    cd.style.display = 'block';
+    cd.innerText = count;
+
+    const timer = setInterval(() => {
+        count--;
+        if (count > 0) {
+            cd.innerText = count;
+        } else {
+            clearInterval(timer);
+            cd.style.display = 'none';
+            
+            // EL ARRANQUE REAL
+            gameRunning = true;
+            lastTime = performance.now();
+            update(); // Llamamos al bucle de juego una sola vez aquí
+            
+            if (document.getElementById('btn-start')) {
+                document.getElementById('btn-start').innerText = "REINICIAR";
+            }
+        }
+    }, 1000);
+}
+
+/* ==========================================
+   2. CONTROL IA (ROSTRO)
+   ========================================== */
+let isCalibrated = false;
+let neutralX = 0;
+let lastGesture = 0;
+
+const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.6 });
+faceMesh.onResults(results => {
+    if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) return;
+    const landmarks = results.multiFaceLandmarks[0];
+    const nose = landmarks[6];
+    
+    if (!isCalibrated) {
+        neutralX = nose.x;
+        isCalibrated = true;
+        document.getElementById('status-overlay').style.display = 'none';
+        return;
+    }
+
+    const now = Date.now();
+    if (now - lastGesture < 200) return;
+    
+    const diffX = nose.x - neutralX;
+    if (diffX > 0.06) { player.pos.x--; if(collide(arena, player)) player.pos.x++; lastGesture = now; }
+    else if (diffX < -0.06) { player.pos.x++; if(collide(arena, player)) player.pos.x--; lastGesture = now; }
+    
+    const mouthGap = Math.abs(landmarks[13].y - landmarks[14].y);
+    if (mouthGap > 0.07) { playerRotate(1); lastGesture = now; }
+});
+
+const camera = new Camera(document.getElementById('input_video'), {
+    onFrame: async () => await faceMesh.send({image: document.getElementById('input_video')}),
+    width: 480, height: 360
+});
+camera.start();
+
+/* ==========================================
+3. BLUETOOTH CON LECTURA DECIMAL (CORREGIDO)
+   ========================================== */
+async function connectElliptical() {
+    const btn = document.getElementById('btn-bluetooth');
+    try {
+        const device = await navigator.bluetooth.requestDevice({
+            filters: [{ services: [0x1826] }, { services: [0x1816] }]
+        });
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(0x1826);
+        const characteristic = await service.getCharacteristic(0x2AD2);
+        
+        await characteristic.startNotifications();
+        characteristic.addEventListener('characteristicvaluechanged', (e) => {
+            const data = e.target.value;
+
+            // LEER 16 BITS (Byte 2 y 3 juntos)
+            // Esto es lo que evita el desfase y el número erróneo
+            let rawVal = data.getUint16(2, true); 
+            
+            // CONVERTIR A DECIMAL (Ej: 200 -> 2.00)
+            let speed = rawVal / 100; 
+
+            // LÓGICA DE RANGOS DE 5 EN 5 (Basado en velocidad real)
+            if (speed < 5) dropInterval = 100;
+            else if (speed < 10) dropInterval = 200;
+            else if (speed < 15) dropInterval = 300;
+            else if (speed < 20) dropInterval = 400;
+            else if (speed < 25) dropInterval = 500;
+            else if (speed < 30) dropInterval = 600;
+            else if (speed < 35) dropInterval = 700;
+            else if (speed < 40) dropInterval = 800;
+            else if (speed < 45) dropInterval = 900;
+            else dropInterval = 1000;
+
+            // Mostrar con 1 decimal para que coincida con tu máquina
+            document.getElementById('val-speed').innerText = speed.toFixed(1);
+        });
+
+        btn.innerText = "✅ CONECTADO";
+        btn.style.background = "#333";
+    } catch (e) { 
+        console.error(e);
+        alert("Error: Revisa que la máquina no esté vinculada a otro móvil"); 
+    }
+}
+</script>
+</body>
+</html>
