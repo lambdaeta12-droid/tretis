@@ -2,61 +2,43 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Tetris Survival: Rango de Intensidad</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 
     <style>
-        body { background: #111; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; overflow: hidden; }
+        body { background: #111; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; overflow-x: hidden; }
         
-        .menu { display: flex; gap: 10px; margin-bottom: 15px; z-index: 100; }
-        button { padding: 12px 20px; border: none; border-radius: 25px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        /* Contenedor para evitar que las cosas se monten */
+        #main-layout { display: flex; flex-direction: column; align-items: center; width: 100%; padding-top: 10px; }
+
+        .menu { display: flex; gap: 10px; margin-bottom: 10px; z-index: 100; }
+        button { padding: 12px 15px; border: none; border-radius: 25px; font-weight: bold; cursor: pointer; font-size: 12px; }
         #btn-bluetooth { background: #0088ff; color: #fff; }
         #btn-start { background: #00ff88; color: #fff; }
 
-        #game-container { position: relative; border: 4px solid #333; border-radius: 10px; }
-        canvas { display: block; background: #000; }
+        /* Estilo del Slider de Intensidad */
+        #intensity-control { width: 90%; max-width: 300px; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 15px; margin-bottom: 10px; text-align: center; border: 1px solid #333; }
+        #intensity-slider { width: 100%; height: 30px; cursor: pointer; accent-color: #00ff88; }
+        #intensity-label { font-size: 14px; font-weight: bold; color: #0ff; margin-bottom: 5px; display: block; }
 
-        /* Marcadores Horizontales */
-        .stats { position: absolute; top: 10px; left: 10px; display: flex; gap: 10px; }
-        .stat-box { background: rgba(0,0,0,0.8); padding: 5px 12px; border-radius: 10px; border: 1px solid #444; font-size: 14px; }
+        #game-container { position: relative; border: 4px solid #333; border-radius: 10px; background: #000; }
+        canvas { display: block; background: #000; width: 240px; height: 400px; }
+
+        .stats { position: absolute; top: 10px; left: 10px; display: flex; gap: 8px; pointer-events: none; }
+        .stat-box { background: rgba(0,0,0,0.85); padding: 4px 10px; border-radius: 8px; border: 1px solid #444; font-size: 12px; text-align: center; }
         #val-speed { color: #00ff88; font-weight: bold; }
+        #effort-display { color: #ffeb3b; font-weight: bold; }
 
-        #camera-preview { position: fixed; bottom: 15px; right: 15px; width: 100px; height: 75px; border: 2px solid #0ff; border-radius: 10px; overflow: hidden; opacity: 0.5; }
+        #camera-preview { position: fixed; bottom: 10px; right: 10px; width: 80px; height: 60px; border: 2px solid #0ff; border-radius: 8px; overflow: hidden; opacity: 0.6; z-index: 50; }
         #input_video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 
-        #status-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 200; }
-    #countdown {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        font-size: 100px;
-        font-weight: bold;
-        color: #ffeb3b;
-        text-shadow: 0 0 20px #000;
-        z-index: 1000;
-        display: none;
-        pointer-events: none;
-    }
-    
-    /* Animación de pulso para los puntos */
-    .pulse-point {
-        animation: point-glow 0.4s ease-out;
-    }
+        #status-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 200; }
+        #countdown { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 80px; font-weight: bold; color: #ffeb3b; z-index: 1000; display: none; }
 
-    @keyframes point-glow {
-        0% { transform: scale(1); color: #fff; } /* Estado normal (blanco) */
-        50% { transform: scale(1.4); color: #00ff88; text-shadow: 0 0 15px #00ff88; } /* Brillo verde neón */
-        100% { transform: scale(1); color: #fff; } /* Volver a normal */
-    }
-
-    /* Asegurar que el span pueda animarse correctamente */
-    #score {
-        display: inline-block;
-        transition: 0.2s;
-    }
+        .pulse-point { animation: point-glow 0.4s ease-out; }
+        @keyframes point-glow { 0% { transform: scale(1); } 50% { transform: scale(1.3); color: #00ff88; } 100% { transform: scale(1); } }
     </style>
 </head>
 <body>
@@ -65,18 +47,26 @@
         <div id="status-text">Iniciando Cámara...</div>
     </div>
 
-    <div class="menu">
-        <button id="btn-bluetooth" onclick="connectElliptical()">🔗 VINCULAR ELÍPTICA</button>
-        <button id="btn-start" onclick="startGame()">▶️ INICIAR JUEGO</button>
-    </div>
+    <div id="main-layout">
+        <div class="menu">
+            <button id="btn-bluetooth" onclick="connectElliptical()">🔗 VINCULAR</button>
+            <button id="btn-start" onclick="startGame()">▶️ INICIAR</button>
+        </div>
 
-    <div id="game-container">
-        <div id="countdown"></div>
-        <canvas id="tetris" width="240" height="400"></canvas>
-        <div class="stats">
-            <div class="stat-box">PTS<br><span id="score">0</span></div>
-            <div class="stat-box">MAX<br><span id="high-score">0</span></div>
-            <div class="stat-box">VEL<br><span id="val-speed">0.0</span></div>
+        <div id="intensity-control">
+            <span id="intensity-label">ESFUERZO ELÍPTICA: <span id="effort-val-text">1</span></span>
+            <input type="range" id="intensity-slider" min="1" max="16" value="1" step="1">
+        </div>
+
+        <div id="game-container">
+            <div id="countdown"></div>
+            <canvas id="tetris" width="240" height="400"></canvas>
+            <div class="stats">
+                <div class="stat-box">PTS<br><span id="score">0</span></div>
+                <div class="stat-box">MAX<br><span id="high-score">0</span></div>
+                <div class="stat-box">VEL<br><span id="val-speed">0.0</span></div>
+                <div class="stat-box">X<span id="effort-display">1</span></div>
+            </div>
         </div>
     </div>
 
@@ -84,7 +74,21 @@
 
 <script>
 /* ==========================================
-   1. LÓGICA TETRIS
+   1. VARIABLES DE INTENSIDAD (NUEVO)
+   ========================================== */
+let effortMultiplier = 1;
+const intensitySlider = document.getElementById('intensity-slider');
+const effortValText = document.getElementById('effort-val-text');
+const effortDisplay = document.getElementById('effort-display');
+
+intensitySlider.addEventListener('input', () => {
+    effortMultiplier = parseInt(intensitySlider.value);
+    effortValText.innerText = effortMultiplier;
+    effortDisplay.innerText = effortMultiplier;
+});
+
+/* ==========================================
+   2. LÓGICA TETRIS
    ========================================== */
 const canvas = document.getElementById('tetris');
 const context = canvas.getContext('2d');
@@ -96,11 +100,10 @@ const arena = createMatrix(12, 20);
 const player = { pos: {x: 0, y: 0}, matrix: null, score: 0 };
 
 let dropCounter = 0;
-let dropInterval = 300; // Velocidad inicial (parado)
+let dropInterval = 200; 
 let lastTime = 0;
 let gameRunning = false;
-let highScore = 0; // Guarda el récord de la sesión
-let animationId = null; // Para controlar el bucle de tiempo
+let highScore = 0; 
 
 function createMatrix(w, h) {
     const m = [];
@@ -159,8 +162,9 @@ function playerRotate(dir) {
     if (collide(arena, player)) rotate(player.matrix, -dir);
 }
 
+// MODIFICADO: Ahora suma puntos según el esfuerzo
 function arenaSweep() {
-    let rowCount = 1;
+    let rowCount = 0;
     outer: for (let y = arena.length - 1; y > 0; --y) {
         for (let x = 0; x < arena[y].length; ++x) {
             if (arena[y][x] === 0) continue outer;
@@ -168,22 +172,24 @@ function arenaSweep() {
         const row = arena.splice(y, 1)[0].fill(0);
         arena.unshift(row);
         ++y;
-        //player.score += rowCount * 10;
-        player.score += 1;
+        rowCount++;
+    }
+
+    if (rowCount > 0) {
+        // Lógica de puntos: Multiplicamos el esfuerzo por las líneas hechas
+        player.score += rowCount * effortMultiplier;
+        
         const s = document.getElementById('score');
         if (s) {
             s.innerText = player.score;
             s.classList.remove('pulse-point');
-            void s.offsetWidth; // Resetear animación
+            void s.offsetWidth; 
             s.classList.add('pulse-point');
         }
-    }
-    
-    // ACTUALIZAR INTERFAZ Y RÉCORD
-    document.getElementById('score').innerText = player.score;
-    if (player.score > highScore) {
-        highScore = player.score;
-        document.getElementById('high-score').innerText = highScore;
+        if (player.score > highScore) {
+            highScore = player.score;
+            document.getElementById('high-score').innerText = highScore;
+        }
     }
 }
 
@@ -227,19 +233,13 @@ function update(time = 0) {
 function startGame() {
     const cd = document.getElementById('countdown');
     let count = 3;
-
-    // Reiniciar valores lógicos
     gameRunning = false; 
-    if (animationId) cancelAnimationFrame(animationId);
-    
     arena.forEach(row => row.fill(0));
     player.score = 0;
-    if (document.getElementById('score')) document.getElementById('score').innerText = "0";
-    
-    playerReset(); // Preparamos la primera pieza
-    draw();        // Dibujamos el tablero vacío
+    document.getElementById('score').innerText = "0";
+    playerReset();
+    draw();
 
-    // Iniciar Conteo
     cd.style.display = 'block';
     cd.innerText = count;
 
@@ -250,30 +250,24 @@ function startGame() {
         } else {
             clearInterval(timer);
             cd.style.display = 'none';
-            
-            // EL ARRANQUE REAL
             gameRunning = true;
             lastTime = performance.now();
-            update(); // Llamamos al bucle de juego una sola vez aquí
-            
-            if (document.getElementById('btn-start')) {
-                document.getElementById('btn-start').innerText = "REINICIAR";
-            }
+            update();
+            document.getElementById('btn-start').innerText = "REINICIAR";
         }
     }, 1000);
 }
 
 /* ==========================================
-   2. CONTROL IA (ROSTRO)
+   3. CONTROL IA (ROSTRO)
    ========================================== */
 let isCalibrated = false;
 let neutralX = 0;
 let lastGesture = 0;
+let readyToRotate = true;
 
 const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
 faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.6 });
-// Variable de control para la boca (fuera de onResults)
-let readyToRotate = true;
 
 faceMesh.onResults(results => {
     if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) return;
@@ -293,30 +287,29 @@ faceMesh.onResults(results => {
     const diffX = nose.x - neutralX;
     const mouthGap = Math.abs(landmarks[13].y - landmarks[14].y);
 
-    // --- MOVIMIENTO LATERAL (Continuo y Sensible) ---
-    // Usamos un pequeño retraso (200ms) para que no se mueva demasiado rápido
     if (now - lastGesture > 200) {
-        if (diffX > 0.05) { // Izquierda sensible
+        if (diffX > 0.05) { 
             player.pos.x--;
             if (collide(arena, player)) player.pos.x++;
             lastGesture = now;
         } 
-        else if (diffX < -0.05) { // Derecha sensible
+        else if (diffX < -0.05) { 
             player.pos.x++;
             if (collide(arena, player)) player.pos.x--;
             lastGesture = now;
         }
     }
 
-    // --- ROTACIÓN (Boca: Una vez por apertura) ---
-    if (mouthGap > 0.09) { 
+    const faceSize = Math.abs(landmarks[10].y - landmarks[152].y);
+    const dynamicThreshold = faceSize * 0.20; 
+
+    if (mouthGap > dynamicThreshold) { 
         if (readyToRotate) {
-            rotate(player.matrix, 1);
-            if (collide(arena, player)) rotate(player.matrix, -1);
-            readyToRotate = false; // Bloqueado hasta que cierres
+            playerRotate(1);
+            readyToRotate = false; 
         }
-    } else if (mouthGap < 0.04) { 
-        readyToRotate = true; // Liberado al cerrar la boca
+    } else if (mouthGap < (dynamicThreshold * 0.5)) {
+        readyToRotate = true; 
     }
 });
 
@@ -327,7 +320,7 @@ const camera = new Camera(document.getElementById('input_video'), {
 camera.start();
 
 /* ==========================================
-3. BLUETOOTH CON LECTURA DECIMAL (CORREGIDO)
+   4. BLUETOOTH
    ========================================== */
 async function connectElliptical() {
     const btn = document.getElementById('btn-bluetooth');
@@ -342,25 +335,20 @@ async function connectElliptical() {
         await characteristic.startNotifications();
         characteristic.addEventListener('characteristicvaluechanged', (e) => {
             const data = e.target.value;
-
-            // LEER 16 BITS (Byte 2 y 3 juntos)
-            // Esto es lo que evita el desfase y el número erróneo
             let rawVal = data.getUint16(2, true); 
-            
-            // CONVERTIR A DECIMAL (Ej: 200 -> 2.00)
             let speed = rawVal / 100; 
 
             // LÓGICA DE RANGOS DE 5 EN 5 (Basado en velocidad real)
-            if (speed < 5) dropInterval = 100;
-            else if (speed < 10) dropInterval = 200;
-            else if (speed < 15) dropInterval = 300;
-            else if (speed < 20) dropInterval = 400;
-            else if (speed < 25) dropInterval = 500;
-            else if (speed < 30) dropInterval = 600;
-            else if (speed < 35) dropInterval = 700;
-            else if (speed < 40) dropInterval = 800;
-            else if (speed < 45) dropInterval = 900;
-            else dropInterval = 1000;
+            if (speed < 5) dropInterval = 50;
+            else if (speed < 10) dropInterval = 100;
+            else if (speed < 15) dropInterval = 150;
+            else if (speed < 20) dropInterval = 200;
+            else if (speed < 25) dropInterval = 300;
+            else if (speed < 30) dropInterval = 400;
+            else if (speed < 35) dropInterval = 600;
+            else if (speed < 40) dropInterval = 700;
+            else if (speed < 45) dropInterval = 800;
+            else dropInterval = 900;
 
             // Mostrar con 1 decimal para que coincida con tu máquina
             document.getElementById('val-speed').innerText = speed.toFixed(1);
@@ -370,7 +358,7 @@ async function connectElliptical() {
         btn.style.background = "#333";
     } catch (e) { 
         console.error(e);
-        alert("Error: Revisa que la máquina no esté vinculada a otro móvil"); 
+        alert("Error de conexión"); 
     }
 }
 </script>
