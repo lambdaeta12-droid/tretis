@@ -272,27 +272,52 @@ let lastGesture = 0;
 
 const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
 faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.6 });
+// Variable de control para la boca (fuera de onResults)
+let readyToRotate = true;
+
 faceMesh.onResults(results => {
     if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) return;
     const landmarks = results.multiFaceLandmarks[0];
     const nose = landmarks[6];
-    
-    if (!isCalibrated) {
-        neutralX = nose.x;
-        isCalibrated = true;
-        document.getElementById('status-overlay').style.display = 'none';
-        return;
+
+    if (!isCalibrated) { 
+        neutralX = nose.x; 
+        isCalibrated = true; 
+        document.getElementById('status-overlay').style.display = 'none'; 
+        return; 
     }
 
+    if (!gameRunning) return;
+
     const now = Date.now();
-    if (now - lastGesture < 200) return;
-    
     const diffX = nose.x - neutralX;
-    if (diffX > 0.06) { player.pos.x--; if(collide(arena, player)) player.pos.x++; lastGesture = now; }
-    else if (diffX < -0.06) { player.pos.x++; if(collide(arena, player)) player.pos.x--; lastGesture = now; }
-    
     const mouthGap = Math.abs(landmarks[13].y - landmarks[14].y);
-    if (mouthGap > 0.07) { playerRotate(1); lastGesture = now; }
+
+    // --- MOVIMIENTO LATERAL (Continuo y Sensible) ---
+    // Usamos un pequeño retraso (200ms) para que no se mueva demasiado rápido
+    if (now - lastGesture > 200) {
+        if (diffX > 0.05) { // Izquierda sensible
+            player.pos.x--;
+            if (collide(arena, player)) player.pos.x++;
+            lastGesture = now;
+        } 
+        else if (diffX < -0.05) { // Derecha sensible
+            player.pos.x++;
+            if (collide(arena, player)) player.pos.x--;
+            lastGesture = now;
+        }
+    }
+
+    // --- ROTACIÓN (Boca: Una vez por apertura) ---
+    if (mouthGap > 0.09) { 
+        if (readyToRotate) {
+            rotate(player.matrix, 1);
+            if (collide(arena, player)) rotate(player.matrix, -1);
+            readyToRotate = false; // Bloqueado hasta que cierres
+        }
+    } else if (mouthGap < 0.04) { 
+        readyToRotate = true; // Liberado al cerrar la boca
+    }
 });
 
 const camera = new Camera(document.getElementById('input_video'), {
